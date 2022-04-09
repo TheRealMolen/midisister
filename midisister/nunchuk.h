@@ -19,6 +19,19 @@ public:
 
     void update();
 
+    float getJoyX() const       { return m_state.joyX; }
+    float getJoyY() const       { return m_state.joyY; }
+    float getAccelX() const     { return m_state.accelX; }
+    float getAccelY() const     { return m_state.accelY; }
+    float getAccelZ() const     { return m_state.accelZ; }
+    bool  getBtnC() const       { return m_state.btnC; }
+    bool  getBtnZ() const       { return m_state.btnZ; }
+
+    bool wasCPressed() const    { return m_state.btnC && !m_prevState.btnC; }
+    bool wasZPressed() const    { return m_state.btnZ && !m_prevState.btnZ; }
+    bool wasCReleased() const   { return !m_state.btnC && m_prevState.btnC; }
+    bool wasZReleased() const   { return !m_state.btnZ && m_prevState.btnZ; }
+
 private:
     template<typename Buf>
     void writeBlocking(const Buf& buf);
@@ -72,7 +85,7 @@ private:
     {
         float joyX, joyY;
         float accelX, accelY, accelZ;
-        bool  btnC, btnZ;
+        bool  btnC=false, btnZ=false;
 
         void set(const RawState& raw, const Calibration& cal);
         void dump() const;
@@ -82,5 +95,6 @@ private:
 
     Calibration m_cal;
     State       m_state;
+    State       m_prevState;
 };
 

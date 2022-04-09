@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
-#include <type_traits>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
+#include "hardware/uart.h"
 
 #include "util.h"
 #include "nunchuk.h"
@@ -21,16 +21,32 @@ constexpr int I2C_SCL_Pin = 5;
 constexpr int I2C_Baud = 100 * 1000;
 
 
+void midi_note_on(uint8_t channel, uint8_t note, uint8_t vel = 127)
+{
+    byte message[3] = { uint8_t(0x90 | channel), note, vel };
+    uart_write_blocking(uart0, message, 3);
+}
+void midi_note_off(uint8_t channel, uint8_t note)
+{
+    byte message[3] = { uint8_t(0x80 | channel), note, 0 };
+    uart_write_blocking(uart0, message, 3);
+}
+
 
 int main() {
     gpio_init(LedPin);
     gpio_set_dir(LedPin, GPIO_OUT);
     gpio_put(LedPin, 1);
 
-    stdio_init_all();
+    stdio_usb_init();
 
     sleep_ms(4000);
     printf("midisister booting...\n");
+
+    // initialise MIDI on UART 0, gpio 0 & 1
+    uart_init(uart0, 31250);
+    gpio_set_function(0, GPIO_FUNC_UART);
+    gpio_set_function(1, GPIO_FUNC_UART);
 
     i2c_init(i2c0, I2C_Baud);
     gpio_set_function(I2C_SDA_Pin, GPIO_FUNC_I2C);
@@ -38,22 +54,36 @@ int main() {
     gpio_pull_up(I2C_SDA_Pin);
     gpio_pull_up(I2C_SCL_Pin);
 
+    initError();
 
+    printf("trying to talk to the nunchuk...\n");
+    Nunchuk nchk(i2c0);
+
+    byte channel = 1;
+    byte playingNote = 0;
+    byte led = 0;
     for (;;)
     {
-        initError();
+        nchk.update();
 
-        printf("trying to talk to the nunchuk...\n");
-        Nunchuk nchk(i2c0);
-
-        for (int i=0; i<6; ++i)
+        if (nchk.wasZPressed())
         {
-            nchk.update();
+            if (playingNote)
+                midi_note_off(channel, playingNote);
+            
+            float x = std::clamp(0.5f * (1.0f + nchk.getAccelX()), 0.f, 1.f);
+            byte note = byte(x * 48.f + 20.f);
 
-            gpio_put(LedPin, 0);
-            sleep_ms(250);
-            gpio_put(LedPin, 1);
-            sleep_ms(250);
+            midi_note_on(channel, note);
+            playingNote = note;
+
+            led = 1 - led;
+            gpio_put(LedPin, led);
+        }
+        else if (nchk.getBtnC() && playingNote)
+        {
+            midi_note_off(channel, playingNote);            
+            playingNote = 0;
         }
     }
 

@@ -3,35 +3,6 @@
 
 #include <algorithm>
 
-template<typename Buf>
-byte* get_buf_ptr(Buf& buf)
-{
-    if constexpr (std::is_array<Buf>::value)
-        return &buf[0];
-    else
-        return &buf;
-}
-template<typename Buf>
-const byte* get_buf_ptr(const Buf& buf)
-{
-    if constexpr (std::is_array<Buf>::value)
-        return &buf[0];
-    else
-        return &buf;
-}
-
-template<typename Buf>
-void print_buf(const Buf& buf)
-{
-    int nbytes = sizeof(buf);
-    
-    auto p = get_buf_ptr(buf);
-    auto end = p + nbytes;
-    for (; p != end; ++p)
-        printf("%02x ", *p);
-}
-
-
 
 Nunchuk::Nunchuk(i2c_inst_t* i2cBlock)
     : m_i2cBlock(i2cBlock)
@@ -43,6 +14,8 @@ Nunchuk::Nunchuk(i2c_inst_t* i2cBlock)
 
 void Nunchuk::update()
 {
+    m_prevState = m_state;
+
     byte buf[6];
     readBlocking(StateAddr, buf);
 
