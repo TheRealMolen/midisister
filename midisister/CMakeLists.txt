@@ -1,5 +1,7 @@
 add_executable(midisister
         midisister.cc
+        nunchuk.cc
+        util.cc
         )
 
 # Pull in our (to be renamed) simple get you started dependencies
