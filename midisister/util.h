@@ -12,6 +12,13 @@ void initError();
 void onError();
 
 
+inline uint32_t millis()
+{
+    return to_ms_since_boot(get_absolute_time());
+}
+
+
+
 template<typename Buf>
 byte* get_buf_ptr(Buf& buf)
 {
