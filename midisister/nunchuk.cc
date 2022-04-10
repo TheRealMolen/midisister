@@ -23,10 +23,12 @@ void Nunchuk::update()
     raw.setFromBuf(buf);
 
     m_state.set(raw, m_cal);
-    m_state.dump();
-    printf("    <-- ");
-    raw.dump();
-    puts("\n");
+    sleep_ms(3);
+
+    // m_state.dump();
+    // printf("    <-- ");
+    // raw.dump();
+    // puts("\n");
 }
 
 
@@ -118,13 +120,13 @@ inline float Nunchuk::Calibration::JoyAxis::parseRaw(byte raw) const
     if (raw < ctr)
     {
         const float fullVal = (ctr - raw) * recipNeg;
-        const float val = (fullVal - deadzone) * (1.0f  / (1.0f - deadzone));
+        const float val = (fullVal - deadzone) * (1.0f  / (1.0f - (2.f * deadzone)));
         return -1.f * std::clamp(val, 0.f, 1.f);
     }
     else
     {
         const float fullVal = (raw - ctr) * recipPos;
-        const float val = (fullVal - deadzone) * (1.0f  / (1.0f - deadzone));
+        const float val = (fullVal - deadzone) * (1.0f  / (1.0f - (2.f * deadzone)));
         return std::clamp(val, 0.f, 1.f);
     }
 }

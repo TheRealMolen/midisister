@@ -5,6 +5,7 @@
 //
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
@@ -27,12 +28,28 @@ constexpr int I2C_Baud = 100 * 1000;
 
 void midi_note_on(uint8_t channel, uint8_t note, uint8_t vel = 127)
 {
-    byte message[3] = { uint8_t(0x90 | channel), note, vel };
+    uint8_t message[3] = { uint8_t(0x90 | channel), note, vel };
     uart_write_blocking(uart0, message, 3);
+    printf(">NOTEON:%d,%d,%d\n", int(channel), int(note), int(vel));
 }
 void midi_note_off(uint8_t channel, uint8_t note)
 {
-    byte message[3] = { uint8_t(0x80 | channel), note, 0 };
+    uint8_t message[3] = { uint8_t(0x80 | channel), note, 0 };
+    uart_write_blocking(uart0, message, 3);
+    printf(">NOTEOFF:%d,%d\n", int(channel), int(note));
+}
+void midi_pitchbend(uint8_t channel, int16_t pitchbend)
+{
+    uint16_t offset = uint16_t(std::clamp<int>(pitchbend + 8192, 0, 16383));
+    uint8_t lsb = uint8_t(offset & 0x7f);
+    uint8_t msb = uint8_t(offset >> 7);
+    uint8_t message[3] = { uint8_t(0xe0 | channel), lsb, msb };
+    uart_write_blocking(uart0, message, 3);
+    //printf(">PB:%d,%d, %02x:%02x\n", int(channel), int(offset), int(msb), int(lsb));
+}
+void midi_cc(uint8_t channel, uint8_t cc, uint8_t val)
+{
+    uint8_t message[3] = { uint8_t(0xB0 | channel), cc, val };
     uart_write_blocking(uart0, message, 3);
 }
 
@@ -40,6 +57,11 @@ void midi_note_off(uint8_t channel, uint8_t note)
 byte channel = 1;
 byte playingNote = 0;
 byte ledState = 0;
+int16_t lastPitchBend = 0;
+byte lastYcc = 64;
+byte lastZcc = 64;
+byte lastNegXcc = 127;
+byte lastPosXcc = 0;
 uint32_t lastMs = 0;
 int lastNoteMs = 0;
 int bpm = 100;
@@ -57,7 +79,7 @@ void initScale()
     
     validNotes.clear();
     validNotes.reserve((hiOctave - lowOctave + 1) * numScaleNotes);
-    for (byte octave=lowOctave; octave<hiOctave-1; ++octave)
+    for (byte octave=lowOctave; octave<=hiOctave; ++octave)
     {
         byte offset = key + (octave * 12);
         for (byte scaleNote : scaleNotes)
@@ -90,16 +112,21 @@ void loop(Nunchuk& nchk)
 {
     uint32_t nowMs = millis();
     uint32_t deltaMs = nowMs - lastMs;
+    if (!deltaMs)
+    {
+        sleep_ms(1);
+        return;
+    }
     lastMs = nowMs;
 
     nchk.update();
         
     float x = std::clamp(0.5f * (1.0f + nchk.getAccelX()), 0.f, 1.f);
-    byte rawNote = byte(x * 56.f + 20.f);
+    byte rawNote = byte(x * 64.f + 36.f);
     byte note = quantize(rawNote);
 
     bool autoRepeat = false;
-    if (nchk.getBtnZ())
+    if (nchk.getBtnC() && nchk.getBtnZ())
     {
         int timeSinceLastNoteMs = nowMs - lastNoteMs;
         if (timeSinceLastNoteMs >= autoRepeatMs && note != playingNote)
@@ -108,6 +135,8 @@ void loop(Nunchuk& nchk)
 
     if (nchk.wasZPressed() || autoRepeat)
     {
+        //printf("   accel=%f  x=%f  raw=%d  note=%d\n", nchk.getAccelX(), x, int(rawNote), int(note));
+
         if (playingNote)
             midi_note_off(channel, playingNote);
 
@@ -118,10 +147,48 @@ void loop(Nunchuk& nchk)
         ledState = 1 - ledState;
         gpio_put(LedPin, ledState);
     }
-    else if (nchk.getBtnC() && playingNote)
+
+    if (nchk.wasZReleased() && playingNote)
     {
         midi_note_off(channel, playingNote);            
         playingNote = 0;
+    }
+
+    if (fabsf(nchk.getJoyY()) > 0.001f)
+    {
+        float rawPitchBend = nchk.getJoyY();
+        int16_t pitchBend = int16_t(rawPitchBend * 8192.f);
+        if (pitchBend != lastPitchBend)
+        {
+            midi_pitchbend(channel, pitchBend);
+            lastPitchBend = pitchBend;
+        }
+    }
+
+    byte ycc = byte(std::clamp(int(((nchk.getAccelY() + 1.f) * 0.5f) * 127.f), 0, 127));
+    if (ycc != lastYcc)
+    {
+        midi_cc(channel, 54, ycc);
+        lastYcc = ycc;
+    }
+    byte zcc = byte(std::clamp(int(((nchk.getAccelZ() + 1.f) * 0.5f) * 127.f), 0, 127));
+    if (zcc != lastZcc)
+    {
+        midi_cc(channel, 55, zcc);
+        lastZcc = zcc;
+    }
+
+    byte negXcc = byte(std::clamp(int(((nchk.getJoyX() + 1.f)) * 127.f), 0, 127));
+    if (negXcc != lastNegXcc)
+    {
+        midi_cc(channel, 43, negXcc);
+        lastNegXcc = negXcc;
+    }
+    byte posXcc = byte(std::clamp(int(nchk.getJoyX() * 127.f), 0, 127));
+    if (posXcc != lastPosXcc)
+    {
+        midi_cc(channel, 19, 127 - posXcc);
+        lastPosXcc = posXcc;
     }
 }
 
