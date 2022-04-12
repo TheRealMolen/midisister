@@ -8,13 +8,17 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <vector>
 #include "pico/stdlib.h"
+#include "hardware/flash.h"
 #include "hardware/i2c.h"
+#include "hardware/sync.h"
 #include "hardware/uart.h"
 
-#include "util.h"
+#include "config.h"
 #include "nunchuk.h"
+#include "util.h"
 
 
 using std::begin, std::end;
@@ -24,6 +28,68 @@ constexpr int I2C_SDA_Pin = 4;
 constexpr int I2C_SCL_Pin = 5;
 constexpr int I2C_Baud = 100 * 1000;
 
+
+class StdinAsync
+{
+public:
+    using LineHandler = void(*)(const char*);
+
+private:
+    static constexpr uint MaxLineLength=1024;
+    char m_buffer[MaxLineLength + 1];
+    uint m_readPos = 0;
+    bool m_overflowed = false;
+
+    LineHandler m_lineFn = nullptr;
+
+public:
+    StdinAsync(LineHandler handler) : m_lineFn(handler) { /**/ }
+
+    // NB. calls line handler when a complete line is received
+    void update();
+};
+
+void StdinAsync::update()
+{
+    for (;;)
+    {
+        int nextChar = getchar_timeout_us(0);
+        if (nextChar == PICO_ERROR_TIMEOUT)
+            return;
+
+        if (nextChar == '\n' || nextChar == '\r')
+        {
+            if (m_overflowed)
+            {
+                m_overflowed = false;
+                m_readPos = 0;
+            }
+            else if (m_readPos > 0)
+            {
+                m_buffer[m_readPos] = 0;
+                m_lineFn(m_buffer);
+
+                m_readPos = 0;
+            }
+        }
+        else if (m_overflowed)
+        {
+            continue;
+        }
+        else if ((m_readPos + 1) < MaxLineLength)
+        {
+            m_buffer[m_readPos] = char(nextChar);
+            ++m_readPos;
+        }
+        else
+        {
+            puts("ERROR: line too long; dropping it all");
+            onError();
+            m_readPos = 0;
+            m_overflowed = true;
+        }
+    }
+}
 
 
 void midi_note_on(uint8_t channel, uint8_t note, uint8_t vel = 127)
@@ -53,63 +119,31 @@ void midi_cc(uint8_t channel, uint8_t cc, uint8_t val)
     uart_write_blocking(uart0, message, 3);
 }
 
-
-byte channel = 1;
-byte playingNote = 0;
-byte ledState = 0;
-int16_t lastPitchBend = 0;
-byte lastYcc = 64;
-byte lastZcc = 64;
-byte lastNegXcc = 127;
-byte lastPosXcc = 0;
 uint32_t lastMs = 0;
+
+byte ledState = 0;
+
+byte playingNote = 0;
 int lastNoteMs = 0;
-int bpm = 100;
-float division = 0.25;
-uint32_t autoRepeatMs = uint32_t((60.0f * 1000.0 / bpm) * division);
-std::vector<byte> validNotes;
 
-void initScale()
+Config config;
+uint16_t lastOutputVals[Config::MaxMappings] = {};
+
+
+void onLineRead(const char* line)
 {
-    const byte scaleNotes[] = { 0, 3, 5, 7, 9, 11 };
-    const byte numScaleNotes = sizeof(scaleNotes) / sizeof(scaleNotes[0]);
-    const byte key = 0;     // C == 0
-    const byte lowOctave = 2;
-    const byte hiOctave = 7;
-    
-    validNotes.clear();
-    validNotes.reserve((hiOctave - lowOctave + 1) * numScaleNotes);
-    for (byte octave=lowOctave; octave<=hiOctave; ++octave)
-    {
-        byte offset = key + (octave * 12);
-        for (byte scaleNote : scaleNotes)
-        {
-            validNotes.push_back(offset + scaleNote);
-        }
-    }
+    printf("read line '%s'\n", line);
+    config.parse(line);
+    puts("done parsing");
 }
 
-byte quantize(byte incoming)
-{
-    auto foundIt = std::lower_bound(begin(validNotes), end(validNotes), incoming);
-    if (foundIt == end(validNotes) || (foundIt+1) == end(validNotes))
-    {
-        return validNotes.back();
-    }
+StdinAsync stdinAsync(onLineRead);
 
-    int lo = *foundIt;
-    int hi = *(foundIt + 1);
-
-    int dLo = incoming - lo;
-    int dHi = hi - incoming;
-    if (dHi < dLo)
-        return hi;
-    
-    return lo;
-}
 
 void loop(Nunchuk& nchk)
 {
+    stdinAsync.update();
+
     uint32_t nowMs = millis();
     uint32_t deltaMs = nowMs - lastMs;
     if (!deltaMs)
@@ -121,77 +155,71 @@ void loop(Nunchuk& nchk)
 
     nchk.update();
         
-    float x = std::clamp(0.5f * (1.0f + nchk.getAccelX()), 0.f, 1.f);
-    byte rawNote = byte(x * 64.f + 36.f);
-    byte note = quantize(rawNote);
-
-    bool autoRepeat = false;
-    if (nchk.getBtnC() && nchk.getBtnZ())
+    if (config.areNotesEnabled())
     {
-        int timeSinceLastNoteMs = nowMs - lastNoteMs;
-        if (timeSinceLastNoteMs >= autoRepeatMs && note != playingNote)
-            autoRepeat = true;
-    }
+        const Mapping& mapping = config.getNotesMapping();
+        uint16_t note = config.quantiseNote(mapping.getVal(nchk));
 
-    if (nchk.wasZPressed() || autoRepeat)
-    {
-        //printf("   accel=%f  x=%f  raw=%d  note=%d\n", nchk.getAccelX(), x, int(rawNote), int(note));
-
-        if (playingNote)
-            midi_note_off(channel, playingNote);
-
-        midi_note_on(channel, note);
-        playingNote = note;
-        lastNoteMs = nowMs;
-
-        ledState = 1 - ledState;
-        gpio_put(LedPin, ledState);
-    }
-
-    if (nchk.wasZReleased() && playingNote)
-    {
-        midi_note_off(channel, playingNote);            
-        playingNote = 0;
-    }
-
-    if (fabsf(nchk.getJoyY()) > 0.001f)
-    {
-        float rawPitchBend = nchk.getJoyY();
-        int16_t pitchBend = int16_t(rawPitchBend * 8192.f);
-        if (pitchBend != lastPitchBend)
+        bool autoRepeat = false;
+        if (nchk.getBtnC() && nchk.getBtnZ())
         {
-            midi_pitchbend(channel, pitchBend);
-            lastPitchBend = pitchBend;
+            int timeSinceLastNoteMs = nowMs - lastNoteMs;
+            if (timeSinceLastNoteMs >= config.getAutoRepeatMs() && note != playingNote)
+                autoRepeat = true;
+        }
+
+        if (nchk.wasZPressed() || autoRepeat)
+        {
+            if (playingNote)
+                midi_note_off(config.getChannel(), playingNote);
+
+            midi_note_on(config.getChannel(), note);
+            playingNote = note;
+            lastNoteMs = nowMs;
+
+            ledState = 1 - ledState;
+            gpio_put(LedPin, ledState);
+        }
+
+        if (nchk.wasZReleased() && playingNote)
+        {
+            midi_note_off(config.getChannel(), playingNote);            
+            playingNote = 0;
         }
     }
 
-    byte ycc = byte(std::clamp(int(((nchk.getAccelY() + 1.f) * 0.5f) * 127.f), 0, 127));
-    if (ycc != lastYcc)
+    for (uint i=0; i<config.getNumMappings(); ++i)
     {
-        midi_cc(channel, 54, ycc);
-        lastYcc = ycc;
-    }
-    byte zcc = byte(std::clamp(int(((nchk.getAccelZ() + 1.f) * 0.5f) * 127.f), 0, 127));
-    if (zcc != lastZcc)
-    {
-        midi_cc(channel, 55, zcc);
-        lastZcc = zcc;
-    }
+        const Mapping& mapping = config.getMappings()[i];
+        uint16_t val = mapping.getVal(nchk);
+        if (val == lastOutputVals[i])
+            continue;
 
-    byte negXcc = byte(std::clamp(int(((nchk.getJoyX() + 1.f)) * 127.f), 0, 127));
-    if (negXcc != lastNegXcc)
-    {
-        midi_cc(channel, 43, negXcc);
-        lastNegXcc = negXcc;
-    }
-    byte posXcc = byte(std::clamp(int(nchk.getJoyX() * 127.f), 0, 127));
-    if (posXcc != lastPosXcc)
-    {
-        midi_cc(channel, 19, 127 - posXcc);
-        lastPosXcc = posXcc;
+        if (mapping.destType == Dest::ControlChange)
+            midi_cc(config.getChannel(), byte(mapping.destParam), byte(val));
+        else if (mapping.destType == Dest::PitchBend)
+            midi_pitchbend(config.getChannel(), val);
+
+        lastOutputVals[i] = val;
     }
 }
 
+static const char* defaultConfigStr = 
+R"END(
+    CHAN 1
+    ROOT C
+    SCALE 0 0 0 1 5 7 11
+    OCTAVES 2 7
+    BPM 100
+    DIV 0.25
+    
+    MAP ax -1 1 48 100 note
+    MAP jx- cc 16
+    MAP jx+ cc 19
+    MAP jy pb
+    MAP ay cc 17
+    MAP az 1 -1 0 127 cc 18
+)END";
 
 int main() {
     gpio_init(LedPin);
@@ -205,14 +233,11 @@ int main() {
     gpio_set_function(0, GPIO_FUNC_UART);
     gpio_set_function(1, GPIO_FUNC_UART);
 
+    config.parse(defaultConfigStr);
+
     // cancel any previous notes
     for (byte note=1; note<120; ++note)
-        midi_note_off(channel, note);
-
-    initScale();
-
-    //sleep_ms(3000);
-    printf("midisister booting...\n");
+        midi_note_off(config.getChannel(), note);
 
     i2c_init(i2c0, I2C_Baud);
     gpio_set_function(I2C_SDA_Pin, GPIO_FUNC_I2C);
@@ -222,7 +247,6 @@ int main() {
 
     initError();
 
-    printf("trying to talk to the nunchuk...\n");
     Nunchuk nchk(i2c0);
     
     lastMs = millis();

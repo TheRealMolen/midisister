@@ -17,3 +17,7 @@ void onError()
 {
     gpio_put(ErrorPin, 1);
 }
+void clearError()
+{
+    gpio_put(ErrorPin, 0);
+}

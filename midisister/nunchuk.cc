@@ -25,10 +25,11 @@ void Nunchuk::update()
     m_state.set(raw, m_cal);
     sleep_ms(3);
 
-    // m_state.dump();
+    //m_state.dump();
+    //printf("\r");
     // printf("    <-- ");
     // raw.dump();
-    // puts("\n");
+    //puts("\n");
 }
 
 
@@ -228,7 +229,7 @@ void Nunchuk::getCalibration()
 
     m_cal.setFromBuf(buf);
 
-    puts("calibration: ");
-    m_cal.dump();
-    puts("\n");
+    // puts("calibration: ");
+    // m_cal.dump();
+    // puts("\n");
 }

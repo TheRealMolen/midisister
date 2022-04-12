@@ -10,6 +10,7 @@ using byte = uint8_t;
 
 void initError();
 void onError();
+void clearError();
 
 
 inline uint32_t millis()
