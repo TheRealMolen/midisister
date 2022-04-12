@@ -1,0 +1,13 @@
+CHAN 1
+ROOT C
+SCALE 0 1 5 7 11
+OCTAVES 2 7
+BPM 100
+DIV 0.25
+
+MAP ax -1 1 48 100 note
+MAP jx- cc 16
+MAP jx+ cc 19
+MAP jy pb
+MAP ay cc 17
+MAP az 1 -1 0 127 cc 18

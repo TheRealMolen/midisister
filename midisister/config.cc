@@ -44,6 +44,15 @@ uint16_t Mapping::getVal(const Nunchuk& nchk) const
     return remapClamped(raw, fromLo, fromHi, toLo, toHi);
 }
 
+
+//                       _             
+//  _ __   __ _ _ __ ___(_)_ __   __ _ 
+// | '_ \ / _` | '__/ __| | '_ \ / _` |
+// | |_) | (_| | |  \__ \ | | | | (_| |
+// | .__/ \__,_|_|  |___/_|_| |_|\__, |
+// |_|                           |___/ 
+//
+
 void skipToWs(const char*& curr)
 {
     while (*curr && !isspace(*curr))
@@ -63,6 +72,7 @@ T parseIntegral(const char* start, const char** outEnd)
     if (parsed != int(val))
     {
         onError();
+        puts("ERR: out of range integral");
         return T(std::clamp<int>(parsed, std::numeric_limits<T>::min(), std::numeric_limits<T>::max()));
     }
     return val;
@@ -136,6 +146,8 @@ Input parseJoystick(const char*& curr, Input fullAxis, Input neg, Input pos)
         return pos;
     else if (mod == '-')
         return neg;
+
+    puts("ERR: invalid joystick");
     onError();
     return fullAxis;
 }
@@ -145,6 +157,7 @@ Input parseInput(const char*& curr)
     skipWs(curr);
     if (!*curr)
     {
+        puts("ERR: null input");
         onError();
         skipToWs(curr);
         return Input::AccelX;
@@ -163,6 +176,7 @@ Input parseInput(const char*& curr)
                 case 'Y': case 'y': return Input::AccelY;
                 case 'Z': case 'z': return Input::AccelZ;
             }
+            puts("ERR: invalid accel input");
             onError();
             skipToWs(curr);
             return Input::AccelX;
@@ -175,11 +189,13 @@ Input parseInput(const char*& curr)
                 case 'X': case 'x': return parseJoystick(curr, Input::JoyX, Input::JoyXNeg, Input::JoyXPos);
                 case 'Y': case 'y': return parseJoystick(curr, Input::JoyY, Input::JoyYNeg, Input::JoyYPos);
             }
+            puts("ERR: unknown joystick input");
             onError();
             skipToWs(curr);
             return Input::JoyX;
     }
 
+    puts("ERR: unknown input");
     onError();
     skipToWs(curr);
     return Input::AccelX;
@@ -187,7 +203,7 @@ Input parseInput(const char*& curr)
 
 void parseMapping(Mapping& mapping, const char*& curr)
 {
-#define BAIL_ON_EOS     if (!*curr) { onError(); return; }
+#define BAIL_ON_EOS     if (!*curr) { onError(); puts("ERR: unexpected end"); return; }
 
     mapping.input = parseInput(curr);
     skipWs(curr);   BAIL_ON_EOS;
@@ -225,7 +241,7 @@ void parseMapping(Mapping& mapping, const char*& curr)
     {
         case 'C': case 'c':     // cc
             mapping.destType = Dest::ControlChange;
-            mapping.destParam = parseByte(curr, &curr); BAIL_ON_EOS;
+            mapping.destParam = parseByte(curr, &curr);
             break;
         
         case 'P': case 'p':     // pb
@@ -333,6 +349,8 @@ void Config::parse(const char* config)
 
     initScale();
     autoRepeatMs = uint32_t((60.0f * 1000.0 / bpm) * division);
+
+    puts("read config successfully");
 }
 
 

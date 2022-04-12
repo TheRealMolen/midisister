@@ -29,69 +29,6 @@ constexpr int I2C_SCL_Pin = 5;
 constexpr int I2C_Baud = 100 * 1000;
 
 
-class StdinAsync
-{
-public:
-    using LineHandler = void(*)(const char*);
-
-private:
-    static constexpr uint MaxLineLength=1024;
-    char m_buffer[MaxLineLength + 1];
-    uint m_readPos = 0;
-    bool m_overflowed = false;
-
-    LineHandler m_lineFn = nullptr;
-
-public:
-    StdinAsync(LineHandler handler) : m_lineFn(handler) { /**/ }
-
-    // NB. calls line handler when a complete line is received
-    void update();
-};
-
-void StdinAsync::update()
-{
-    for (;;)
-    {
-        int nextChar = getchar_timeout_us(0);
-        if (nextChar == PICO_ERROR_TIMEOUT)
-            return;
-
-        if (nextChar == '\n' || nextChar == '\r')
-        {
-            if (m_overflowed)
-            {
-                m_overflowed = false;
-                m_readPos = 0;
-            }
-            else if (m_readPos > 0)
-            {
-                m_buffer[m_readPos] = 0;
-                m_lineFn(m_buffer);
-
-                m_readPos = 0;
-            }
-        }
-        else if (m_overflowed)
-        {
-            continue;
-        }
-        else if ((m_readPos + 1) < MaxLineLength)
-        {
-            m_buffer[m_readPos] = char(nextChar);
-            ++m_readPos;
-        }
-        else
-        {
-            puts("ERROR: line too long; dropping it all");
-            onError();
-            m_readPos = 0;
-            m_overflowed = true;
-        }
-    }
-}
-
-
 void midi_note_on(uint8_t channel, uint8_t note, uint8_t vel = 127)
 {
     uint8_t message[3] = { uint8_t(0x90 | channel), note, vel };
@@ -104,14 +41,13 @@ void midi_note_off(uint8_t channel, uint8_t note)
     uart_write_blocking(uart0, message, 3);
     printf(">NOTEOFF:%d,%d\n", int(channel), int(note));
 }
-void midi_pitchbend(uint8_t channel, int16_t pitchbend)
+void midi_pitchbend(uint8_t channel, uint16_t pitchbend)
 {
-    uint16_t offset = uint16_t(std::clamp<int>(pitchbend + 8192, 0, 16383));
-    uint8_t lsb = uint8_t(offset & 0x7f);
-    uint8_t msb = uint8_t(offset >> 7);
+    uint8_t lsb = uint8_t(pitchbend & 0x7f);
+    uint8_t msb = uint8_t(pitchbend >> 7);
     uint8_t message[3] = { uint8_t(0xe0 | channel), lsb, msb };
     uart_write_blocking(uart0, message, 3);
-    //printf(">PB:%d,%d, %02x:%02x\n", int(channel), int(offset), int(msb), int(lsb));
+    //printf(">PB:%d,%d, %02x:%02x\n", int(channel), int(pitchbend), int(msb), int(lsb));
 }
 void midi_cc(uint8_t channel, uint8_t cc, uint8_t val)
 {
@@ -208,7 +144,7 @@ static const char* defaultConfigStr =
 R"END(
     CHAN 1
     ROOT C
-    SCALE 0 0 0 1 5 7 11
+    SCALE 0 1 5 7 10
     OCTAVES 2 7
     BPM 100
     DIV 0.25

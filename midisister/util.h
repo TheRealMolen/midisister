@@ -8,6 +8,28 @@
 using byte = uint8_t;
 
 
+class StdinAsync
+{
+public:
+    using LineHandler = void(*)(const char*);
+
+private:
+    static constexpr uint MaxLineLength=1024;
+    char m_buffer[MaxLineLength + 1];
+    uint m_readPos = 0;
+    bool m_overflowed = false;
+
+    LineHandler m_lineFn = nullptr;
+
+public:
+    StdinAsync(LineHandler handler) : m_lineFn(handler) { /**/ }
+
+    // NB. calls line handler when a complete line is received
+    void update();
+};
+
+
+
 void initError();
 void onError();
 void clearError();
