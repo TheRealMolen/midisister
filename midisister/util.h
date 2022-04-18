@@ -70,3 +70,11 @@ void print_buf(const Buf& buf)
     for (; p != end; ++p)
         printf("%02x ", *p);
 }
+
+
+
+template<typename Integral>
+inline Integral div_round_up(Integral val, Integral boundary)
+{
+    return (val + boundary - 1) / boundary;
+}

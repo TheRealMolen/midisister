@@ -1,6 +1,8 @@
 add_executable(midisister
         midisister.cc
         config.cc
+        flash_save.cc
+        midi.cc
         nunchuk.cc
         util.cc
         )
