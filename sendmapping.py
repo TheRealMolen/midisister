@@ -3,6 +3,14 @@ import serial           # pip install pyserial
 
 MAPPINGDIR = os.path.join(os.path.dirname(__file__), 'mappings')
 
+def get_mapping(mappingname):
+    if '.txt' not in mappingname:
+        mappingname += '.txt'
+    
+    mappingfile = os.path.join(MAPPINGDIR, mappingname)
+    with open(mappingfile, 'rt') as infile:
+        return infile.read()
+
 def get_clean_mapping(mappingname):
     if '.txt' not in mappingname:
         mappingname += '.txt'
@@ -18,7 +26,7 @@ def get_clean_mapping(mappingname):
 
 def send_mapping(serialPortName, mappingname):
     try:
-        mappingStr = get_clean_mapping(mappingname)
+        mappingStr = get_mapping(mappingname)
     except FileNotFoundError as e:
         print("couldn't open " + e.filename)
         sys.exit(2)

@@ -11,3 +11,5 @@ MAP jx+ cc 19
 MAP jy pb
 MAP ay cc 17
 MAP az 1 -1 0 127 cc 18
+
+END.

@@ -11,6 +11,9 @@ MAP ax -1 1 48 112 note
 MAP jx- cc 16
 MAP jx+ cc 1
 MAP jy- cc 23
-MAP jy+ cc 74
+# MAP jy+ cc 74     filt1 cutoff is a liability
+MAP jy+ cc 20
 MAP ay cc 17
 MAP az 1 -1 0 127 cc 18
+
+END.

@@ -33,6 +33,7 @@ public:
 void initError();
 void onError();
 void clearError();
+bool hasErrorHappened();
 
 
 inline uint32_t millis()

@@ -278,7 +278,7 @@ void Config::initScale()
 }
 
 
-void Config::parse(const char* config)
+bool Config::parse(const char* config)
 {
     // reset to blank
     *this = Config{};
@@ -291,6 +291,15 @@ void Config::parse(const char* config)
         skipWs(curr);
         if (!*curr)
             break;
+
+        // if this is a comment, ignore everything to the end of the line
+        if (*curr == '#')
+        {
+            do {
+                ++curr;
+            } while(*curr && (*curr != '\n') && (*curr != '\r'));
+            continue;
+        }
             
         auto cmdStart = curr;
         skipToWs(curr);
@@ -339,18 +348,26 @@ void Config::parse(const char* config)
                 }
                 break;
 
+            case 'E':   // END
+                break;
+
             default:
                 onError();
                 *(char*)cmdEnd = 0;
                 printf("unknown command '%s'\n", cmdStart);
-                return;
+                return false;
         }
     }
 
     initScale();
     autoRepeatMs = uint32_t((60.0f * 1000.0 / bpm) * division);
 
-    puts("read config successfully");
+    if (!hasErrorHappened())
+        puts("read config successfully");
+    else
+        puts("aborted config read; invalid config");
+
+    return !hasErrorHappened();
 }
 
 

@@ -5,23 +5,30 @@
 
 constexpr int ErrorPin = 18;
 
+static bool errorStatus = false;
 
 void initError()
 {
     gpio_init(ErrorPin);
     gpio_set_dir(ErrorPin, GPIO_OUT);
     gpio_put(ErrorPin, 0);
+    errorStatus = false;
 }
 
 void onError()
 {
     gpio_put(ErrorPin, 1);
+    errorStatus = true;
 }
 void clearError()
 {
     gpio_put(ErrorPin, 0);
+    errorStatus = false;
 }
-
+bool hasErrorHappened()
+{
+    return errorStatus;
+}
 
 
 void StdinAsync::update()

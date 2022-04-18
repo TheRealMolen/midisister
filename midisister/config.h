@@ -51,7 +51,7 @@ public:
     using Notes = std::vector<byte>;
     static const uint MaxMappings = 10;
 
-    void parse(const char* config);
+    bool parse(const char* config);
     byte quantiseNote(uint16_t incoming) const;
 
     bool areNotesEnabled() const        { return notesMapping != nullptr; }
