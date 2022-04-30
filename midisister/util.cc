@@ -46,7 +46,7 @@ void StdinAsync::update()
                 m_overflowed = false;
                 m_readPos = 0;
             }
-            else if (m_readPos > 0)
+            else
             {
                 m_buffer[m_readPos] = 0;
                 m_lineFn(m_buffer);

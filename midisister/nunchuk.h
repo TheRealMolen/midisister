@@ -34,14 +34,17 @@ public:
 
 private:
     template<typename Buf>
-    void writeBlocking(const Buf& buf);
+    bool writeBlocking(const Buf& buf);
 
     template<typename Buf>
-    void readBlocking(byte addr, Buf& buf);
+    bool readBlocking(byte addr, Buf& buf);
 
-    void initNoEncryption();
-    void getIdent();
-    void getCalibration();
+    bool init();
+    bool initNoEncryption();
+    bool getIdent();
+    bool getCalibration();
+
+    void onError();
 
 private:
     struct Calibration
@@ -92,6 +95,9 @@ private:
     };
 
     i2c_inst_t* m_i2cBlock;
+
+    bool        m_ready = false;
+    bool        m_error = false;
 
     Calibration m_cal;
     State       m_state;

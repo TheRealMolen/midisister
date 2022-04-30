@@ -63,6 +63,23 @@ R"END(
     END.
 )END";
 
+
+void hexdump(const void* start, uint len)
+{
+    auto charify = [](uint c) -> char { return (c >= 32 && c < 128) ? char(c) : ' '; };
+    uint addr = 0;
+    for(auto c = (const uint8_t*)start; c < ((const uint8_t*)start + len); c += 16, addr+=16)
+    {
+        printf("%08x: %02x%02x %02x%02x %02x%02x %02x%02x %02x%02x %02x%02x %02x%02x %02x%02x  %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n",
+            addr,
+            uint(c[0]), uint(c[1]),   uint(c[2]), uint(c[3]),   uint(c[4]), uint(c[5]),   uint(c[6]), uint(c[7]), 
+            uint(c[8]), uint(c[9]),   uint(c[10]), uint(c[11]), uint(c[12]), uint(c[13]), uint(c[14]), uint(c[15]),
+            charify(c[0]), charify(c[1]),   charify(c[2]), charify(c[3]),   charify(c[4]), charify(c[5]),   charify(c[6]), charify(c[7]), 
+            charify(c[8]), charify(c[9]),   charify(c[10]), charify(c[11]), charify(c[12]), charify(c[13]), charify(c[14]), charify(c[15])
+            );
+    }
+}
+
 constexpr uint MaxConfigSize = 4 * 1024;
 char configBuf[MaxConfigSize] = {};
 void onLineRead(const char* line)
@@ -76,6 +93,12 @@ void onLineRead(const char* line)
             puts("no data saved in flash");
         return;
     }
+    else if (strncmp("hdmp", line, 4) == 0 && configBuf[0] == 0)
+    {
+        constexpr ptrdiff_t Flash_SaveBufOffset = (2*1024*1024) - (100*1024);
+        const uint8_t* saveBuf = (const uint8_t*)(XIP_BASE + Flash_SaveBufOffset);
+        hexdump(saveBuf, 512 + 64);
+    }
 
     strcat(configBuf, line);
     if (!strstr(line, "END."))
@@ -87,25 +110,25 @@ void onLineRead(const char* line)
         if (config.parse(configBuf))
         {
             save_flash_data((const uint8_t*)configBuf);
-            configBuf[0] = 0;
+            memset(configBuf, 0, sizeof(configBuf));
             puts("updated config");
             is_flash_save_valid();
         }
         else
         {
-            const char* configBuf;
+            const char* fallbackConfigBuf;
             if (is_flash_save_valid())
             {
                 puts("reverting to saved");
-                configBuf = get_flash_save_data();
+                fallbackConfigBuf = get_flash_save_data();
             }
             else
             {
                 puts("reverting to default");
-                configBuf = defaultConfigStr;
+                fallbackConfigBuf = defaultConfigStr;
             }
 
-            config.parse(configBuf);
+            config.parse(fallbackConfigBuf);
             // restore the error indicator
             onError();
         }
@@ -132,8 +155,7 @@ void loop(Nunchuk& nchk)
         
     if (config.areNotesEnabled())
     {
-        const Mapping& mapping = config.getNotesMapping();
-        uint16_t note = config.quantiseNote(mapping.getVal(nchk));
+        uint16_t note = config.getMappedNote(nchk);
 
         bool autoRepeat = false;
         if (nchk.getBtnC() && nchk.getBtnZ())
@@ -191,15 +213,16 @@ int main() {
     const char* configStr = is_flash_save_valid() ? get_flash_save_data() : defaultConfigStr;
     config.parse(configStr);
 
-    // cancel any previous notes
-    for (byte note=1; note<120; ++note)
-        midi_note_off(config.getChannel(), note);
-
     i2c_init(I2C_Block, I2C_Baud);
     gpio_set_function(I2C_SDA_Gpio, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL_Gpio, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_SDA_Gpio);
     gpio_pull_up(I2C_SCL_Gpio);
+
+    // cancel any previous notes
+    sleep_ms(1);
+    for (byte note=1; note<120; ++note)
+        midi_note_off(config.getChannel(), note);
 
     initError();
 

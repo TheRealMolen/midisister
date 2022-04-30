@@ -33,7 +33,7 @@ uint16_t remapClamped(float val, float fromLo, float fromHi, uint16_t toLo, uint
         return toLo;
 
     float normalised = std::clamp((val - fromLo) / (fromHi - fromLo), 0.f, 1.f);
-    float scaled = normalised * float(toHi - toLo);
+    float scaled = normalised * float(toHi - toLo + 1);
     int final = int(scaled) + toLo;
     return uint16_t(std::clamp<int>(final, toLo, toHi));
 }
@@ -201,7 +201,7 @@ Input parseInput(const char*& curr)
     return Input::AccelX;
 }
 
-void parseMapping(Mapping& mapping, const char*& curr)
+void parseMapping(Mapping& mapping, const char*& curr, uint8_t numScaleNotes)
 {
 #define BAIL_ON_EOS     if (!*curr) { onError(); puts("ERR: unexpected end"); return; }
 
@@ -252,6 +252,12 @@ void parseMapping(Mapping& mapping, const char*& curr)
 
         case 'N': case 'n':     // note
             mapping.destType = Dest::Note;
+            if (useDefaultRemap && numScaleNotes > 0)
+            {
+                mapping.toLo = 0;
+                mapping.toHi = numScaleNotes - 1;
+                printf("  .. remapping note input to [%d,%d]\n", int(mapping.toLo), int(mapping.toHi));
+            }
             break;
 
         default:
@@ -263,7 +269,7 @@ void parseMapping(Mapping& mapping, const char*& curr)
 }
 
 
-void Config::initScale()
+void Config::refreshScaleNotes()
 {
     validNotes.clear();
     validNotes.reserve((lastOctave - firstOctave + 1) * numScaleNotes);
@@ -286,6 +292,7 @@ bool Config::parse(const char* config)
 
     const char* curr = config;
 
+    uint commandNum = 1;
     for (;;)
     {
         skipWs(curr);
@@ -312,16 +319,19 @@ bool Config::parse(const char* config)
                 break;
 
             case 'R':   // ROOT
-                key = parseKey(curr);
+                key = parseKey(curr);                
+                refreshScaleNotes();
                 break;
 
             case 'S':   // SCALE
-                parseScale(curr);
+                parseScale(curr);                
+                refreshScaleNotes();
                 break;
 
             case 'O':   // OCTAVES
                 firstOctave = parseByte(curr, &curr);
-                lastOctave = parseByte(curr, &curr);
+                lastOctave = parseByte(curr, &curr);                
+                refreshScaleNotes();
                 break;
 
             case 'B':   // BPM
@@ -335,7 +345,7 @@ bool Config::parse(const char* config)
             case 'M':   // MAP
                 if (numMappings < MaxMappings)
                 {
-                    parseMapping(mappings[numMappings], curr);
+                    parseMapping(mappings[numMappings], curr, validNotes.size());
                     if (mappings[numMappings].destType == Dest::Note)
                         notesMapping = &mappings[numMappings];
 
@@ -353,13 +363,14 @@ bool Config::parse(const char* config)
 
             default:
                 onError();
-                *(char*)cmdEnd = 0;
-                printf("unknown command '%s'\n", cmdStart);
+                //*(char*)cmdEnd = 0;
+                printf("%u: unknown command '%s' at char %u\n", commandNum, cmdStart, uint(cmdStart - config));
                 return false;
         }
+
+        ++commandNum;
     }
 
-    initScale();
     autoRepeatMs = uint32_t((60.0f * 1000.0 / bpm) * division);
 
     if (!hasErrorHappened())
@@ -371,10 +382,32 @@ bool Config::parse(const char* config)
 }
 
 
+uint8_t Config::getMappedNote(const Nunchuk& nchk) const
+{
+    if (!notesMapping || validNotes.empty())
+    {
+        onError();
+        puts("ERR: trying to use note mapping when there is none");
+        return 60;
+    }
+
+    uint noteIx = notesMapping->getVal(nchk);
+    noteIx = std::clamp<uint>(noteIx, 0, validNotes.size() - 1);
+
+    return validNotes[noteIx];
+}
+
+
 byte Config::quantiseNote(uint16_t incoming) const
 {
+    if (validNotes.empty())
+        return incoming;
+
+    if (incoming <= validNotes.front())
+        return validNotes.front();
+
     auto foundIt = std::lower_bound(begin(validNotes), end(validNotes), incoming);
-    if (foundIt == end(validNotes) || (foundIt+1) == end(validNotes))
+    if (foundIt == end(validNotes))
     {
         return validNotes.back();
     }

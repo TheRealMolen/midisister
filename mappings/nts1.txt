@@ -1,0 +1,19 @@
+# KORG nts-1
+
+CHAN 0
+ROOT C
+SCALE 0 3 5 7 10
+OCTAVES 3 6
+BPM 100
+DIV 0.25
+
+MAP ax note
+MAP jy pb
+
+MAP jx- 1 0 10 127 cc 43    # filter cutoff
+MAP az 1 -0.5 0 90 cc 44   # filter reso
+
+MAP jx+ 0 1 0 127 cc 54      # osc shape
+MAP ay cc 55        # osc alt
+
+END.

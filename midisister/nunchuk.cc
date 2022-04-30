@@ -7,13 +7,41 @@
 Nunchuk::Nunchuk(i2c_inst_t* i2cBlock)
     : m_i2cBlock(i2cBlock)
 {
-    initNoEncryption();
-    getIdent();
-    getCalibration();
+}
+
+bool Nunchuk::init()
+{
+    m_ready = false;
+
+    m_error = false;
+    if (initNoEncryption() &&
+        getIdent() &&
+        getCalibration())
+    {
+        m_ready = true;
+        return true;
+    }
+
+    return false;
+}
+
+void Nunchuk::onError()
+{
+    m_ready = false;
+    m_error = true;
+
+    ::onError();
 }
 
 void Nunchuk::update()
 {
+    if (!m_ready)
+    {
+        if (!init())
+            return;
+        clearError();
+    }
+
     m_prevState = m_state;
 
     byte buf[6];
@@ -169,7 +197,7 @@ void Nunchuk::State::dump() const
 
 
 template<typename Buf>
-void Nunchuk::writeBlocking(const Buf& buf)
+bool Nunchuk::writeBlocking(const Buf& buf)
 {
     int nbytes = sizeof(buf);
     
@@ -182,11 +210,14 @@ void Nunchuk::writeBlocking(const Buf& buf)
     {
         onError();
         printf("tried to write %dB but wrote %d\n", nbytes, nwritten);
+        return false;
     }
+
+    return true;
 }
 
 template<typename Buf>
-void Nunchuk::readBlocking(byte addr, Buf& buf)
+bool Nunchuk::readBlocking(byte addr, Buf& buf)
 {
     writeBlocking(addr);
 
@@ -198,10 +229,13 @@ void Nunchuk::readBlocking(byte addr, Buf& buf)
     {
         onError();
         printf("tried to read %dB but wrote %d\n", nbytes, nread);
+        return false;
     }
+
+    return true;
 }
 
-void Nunchuk::initNoEncryption()
+bool Nunchuk::initNoEncryption()
 {
     const byte InitStr[] = { 0xf0, 0x55 };
     const byte DisableEncryptionStr[] = { 0xfb, 0x00 };
@@ -211,18 +245,30 @@ void Nunchuk::initNoEncryption()
     sleep_ms(100);
     writeBlocking(DisableEncryptionStr);
     sleep_ms(100);
+
+    return !m_error;
 }
 
-void Nunchuk::getIdent()
+bool Nunchuk::getIdent()
 {
     byte ident[6];
     readBlocking(IdentAddr, ident);
 
     print_buf(ident);
     puts("\n");
+
+    if (ident[0] != 0 || ident[1] != 0 ||
+        ident[2] != 0xa4 || ident[3] != 0x20)
+    {
+        puts("unknown / invalid ident");
+        onError();
+        return false;
+    }
+
+    return !m_error;
 }
 
-void Nunchuk::getCalibration()
+bool Nunchuk::getCalibration()
 {
     byte buf[16];
     readBlocking(CalibrationAddr, buf);
@@ -232,4 +278,6 @@ void Nunchuk::getCalibration()
     // puts("calibration: ");
     // m_cal.dump();
     // puts("\n");
+
+    return !m_error;
 }

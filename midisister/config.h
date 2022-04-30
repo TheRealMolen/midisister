@@ -52,10 +52,10 @@ public:
     static const uint MaxMappings = 10;
 
     bool parse(const char* config);
-    byte quantiseNote(uint16_t incoming) const;
 
     bool areNotesEnabled() const        { return notesMapping != nullptr; }
-    const Mapping& getNotesMapping() const  { return *notesMapping; }
+    uint8_t getMappedNote(const Nunchuk& nchk) const;
+    byte quantiseNote(uint16_t incoming) const;
 
     byte getChannel() const             { return channel; }
     uint32_t getAutoRepeatMs() const    { return autoRepeatMs; }
@@ -65,7 +65,7 @@ public:
 
 private:
     void parseScale(const char*& str);
-    void initScale();
+    void refreshScaleNotes();
 
 private:
     static constexpr uint MaxScaleNotes = 16;
